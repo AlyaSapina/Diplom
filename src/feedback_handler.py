@@ -5,6 +5,7 @@
 import json
 import os
 from datetime import datetime
+from typing import List  # ← ЭТО БЫЛО ПРОПУЩЕНО!
 
 FEEDBACK_FILE = "feedback/feedback.json"
 

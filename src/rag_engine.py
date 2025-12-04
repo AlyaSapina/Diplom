@@ -28,14 +28,17 @@ class RAGEngine:
         self._load_llm()
 
     def _load_llm(self):
-        """Загружает Phi-3-mini без 4-битной квантованной загрузки (для Windows)."""
+        """
+        Загружает Phi-3-mini без flash-attn (стабильно на Windows).
+        """
         model_id = "microsoft/Phi-3-mini-4k-instruct"
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.llm_model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="auto",
-            torch_dtype=torch.float16,  # или torch.float32, если не хватает памяти
-            trust_remote_code=True
+            dtype=torch.float16,  # вместо torch_dtype
+            trust_remote_code=True,
+            attn_implementation="eager"  # отключает flash-attn
         )
         self.llm_pipeline = pipeline(
             "text-generation",
