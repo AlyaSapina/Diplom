@@ -28,21 +28,13 @@ class RAGEngine:
         self._load_llm()
 
     def _load_llm(self):
-        """
-        Загружает Phi-3-mini в 4-битном режиме.
-        """
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
+        """Загружает Phi-3-mini без 4-битной квантованной загрузки (для Windows)."""
         model_id = "microsoft/Phi-3-mini-4k-instruct"
-
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.llm_model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            quantization_config=bnb_config,
             device_map="auto",
+            torch_dtype=torch.float16,  # или torch.float32, если не хватает памяти
             trust_remote_code=True
         )
         self.llm_pipeline = pipeline(
