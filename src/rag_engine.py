@@ -29,25 +29,35 @@ class RAGEngine:
 
     def _load_llm(self):
         """
-        Загружает Phi-3-mini без flash-attn (стабильно на Windows).
+        Загружает Phi-3-mini-4k-instruct с отключённым flash attention.
         """
         model_id = "microsoft/Phi-3-mini-4k-instruct"
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.llm_model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="auto",
-            dtype=torch.float16,  # вместо torch_dtype
+            dtype="auto",  # автоматически выберет float16/bfloat16/cpu
             trust_remote_code=True,
-            attn_implementation="eager"  # отключает flash-attn
+            attn_implementation="eager"  # ← КЛЮЧЕВОЙ ПАРАМЕТР
         )
         self.llm_pipeline = pipeline(
             "text-generation",
             model=self.llm_model,
             tokenizer=self.llm_tokenizer,
             max_new_tokens=256,
-            temperature=0.1
+            temperature=0.1,
+            do_sample=False
         )
 
+        # Настройка пайплайна генерации
+        self.llm_pipeline = pipeline(
+            "text-generation",
+            model=self.llm_model,
+            tokenizer=self.llm_tokenizer,
+            max_new_tokens=256,
+            temperature=0.1,
+            do_sample=False  # для более предсказуемых ответов
+        )
     def add_chunks(self, chunks: List[str]):
         """
         Добавляет чанки в индекс.
