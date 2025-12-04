@@ -1,31 +1,38 @@
 """
-RAG-движок с поддержкой перевода на русский язык.
+RAG-движок с переводом на русский через Argos Translate.
 """
 
 import os
 import json
 import faiss
-import torch
+import argostranslate.package
+import argostranslate.translate
 from sentence_transformers import SentenceTransformer
-from transformers import pipeline
 from typing import List, Tuple
+
+# Устанавливаем перевод один раз при импорте
+def _install_translation():
+    """Устанавливает пакет перевода en→ru, если ещё не установлен."""
+    installed_languages = {lang.code for lang in argostranslate.translate.get_installed_languages()}
+    if "en" not in installed_languages or "ru" not in installed_languages:
+        print("Установка пакета перевода en→ru (первый запуск, может занять 1–2 минуты)...")
+        argostranslate.package.update_package_index()
+        available_packages = argostranslate.package.get_available_packages()
+        package_to_install = next(
+            pkg for pkg in available_packages if pkg.from_code == "en" and pkg.to_code == "ru"
+        )
+        argostranslate.package.install_from_path(package_to_install.download())
+        print("Пакет перевода установлен.")
+
+# Выполняем установку при импорте модуля
+_install_translation()
 
 class RAGEngine:
     def __init__(self, embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        # Эмбеддинги
         self.embedding_model = SentenceTransformer(embedding_model_name)
         self.dimension = self.embedding_model.get_sentence_embedding_dimension()
         self.index = faiss.IndexFlatIP(self.dimension)
         self.chunks = []
-
-        # Модель перевода (английский → русский)
-        print("Загрузка модели перевода en→ru...")
-        self.translator = pipeline(
-            "translation_en_to_ru",
-            model="Helsinki-NLP/opus-mt-en-ru",
-            device=0 if torch.cuda.is_available() else -1  # GPU если есть
-        )
-        print("Модель перевода загружена.")
 
     def add_chunks(self, chunks: List[str]):
         embeddings = self.embedding_model.encode(chunks, normalize_embeddings=True)
@@ -45,43 +52,43 @@ class RAGEngine:
             self.index = faiss.read_index(index_path)
             with open(chunks_path, "r", encoding="utf-8") as f:
                 self.chunks = json.load(f)
-            self.dimension = self.index.d
         else:
             raise FileNotFoundError("Индекс не найден. Сначала загрузите инструкции.")
 
     def _is_english(self, text: str) -> bool:
-        """Простая эвристика: если много латинских букв — английский."""
-        latin = sum(1 for c in text if 'a' <= c.lower() <= 'z')
-        total = len(text)
-        return total > 0 and latin / total > 0.3
+        """Простая эвристика: если много латинских букв — считаем английским."""
+        if not text.strip():
+            return False
+        latin_chars = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+        total_chars = len(text)
+        return total_chars > 0 and latin_chars / total_chars > 0.3
 
     def _translate_to_russian(self, text: str) -> str:
-        """Переводит текст на русский, если он на английском."""
+        """Переводит текст с английского на русский. Если не английский — возвращает как есть."""
         if self._is_english(text):
             try:
-                result = self.translator(text, max_length=512)
-                return result[0]['translation_text']
+                return argostranslate.translate.translate(text, "en", "ru")
             except Exception as e:
-                print(f"Ошибка перевода: {e}")
                 return f"[Ошибка перевода] {text}"
-        else:
-            return text  # уже на русском или другом языке
-
-    def retrieve(self, query: str, k: int = 1) -> str:
-        """Возвращает самый релевантный чанк."""
-        if self.index.ntotal == 0:
-            return "Инструкции не загружены."
-        query_emb = self.embedding_model.encode([query], normalize_embeddings=True)
-        _, indices = self.index.search(query_emb, k)
-        best_chunk = self.chunks[indices[0][0]] if indices[0][0] < len(self.chunks) else "Не найдено."
-        return best_chunk
+        return text
 
     def ask(self, query: str) -> Tuple[str, str]:
-        """
-        Возвращает:
-        - ответ на русском (переведённый, если нужно),
-        - контекст (оригинал, для отладки).
-        """
-        context = self.retrieve(query)
-        answer = self._translate_to_russian(context)
-        return answer, context
+        """Возвращает (ответ на русском, оригинальный контекст)."""
+        if self.index.ntotal == 0:
+            return "Сначала загрузите инструкции.", ""
+
+        query_emb = self.embedding_model.encode([query], normalize_embeddings=True)
+        _, indices = self.index.search(query_emb, k=1)
+        idx = indices[0][0]
+
+        if idx >= len(self.chunks):
+            return "Не найдено.", ""
+
+        original_context = self.chunks[idx]
+        answer = self._translate_to_russian(original_context)
+
+        # Улучшаем читаемость
+        answer = answer.replace(". ", ".\n\n").strip()
+        original_context = original_context.replace(". ", ".\n\n").strip()
+
+        return answer, original_context
