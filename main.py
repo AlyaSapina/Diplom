@@ -8,13 +8,9 @@ from src.rag_engine import RAGEngine
 from src.pdf_loader import process_pdf_to_chunks
 from src.feedback_handler import log_feedback
 
-# Глобальный экземпляр движка
 engine = RAGEngine()
 
 def upload_pdfs(files):
-    """
-    Обработка загрузки PDF-файлов.
-    """
     all_chunks = []
     for file in files:
         chunks = process_pdf_to_chunks(file.name)
@@ -24,32 +20,25 @@ def upload_pdfs(files):
     return f"Загружено {len(all_chunks)} чанков из {len(files)} файлов."
 
 def ask_question(query):
-    """
-    Отправка вопроса и получение ответа.
-    """
     if engine.index.ntotal == 0:
-        return "Сначала загрузите инструкции!", []
-    answer, chunks = engine.ask(query)
-    return answer, "\n---\n".join(chunks)
+        return "Сначала загрузите инструкции!", ""
+    answer, context = engine.ask(query)
+    context_str = "\n\n---\n\n".join([context])  # важно: строка, а не список!
+    return answer, context_str
 
-def handle_feedback(query, answer, chunks_str, is_correct):
-    """
-    Обработка кнопок 'Верно/Неверно'.
-    """
-    chunks = chunks_str.split("\n---\n")
-    log_feedback(query, answer, chunks, is_correct)
+def handle_feedback(query, answer, context_str, is_correct):
+    context = context_str.split("\n\n---\n\n")[0] if context_str else ""
+    log_feedback(query, answer, [context], is_correct)
     return "Спасибо за обратную связь!" if is_correct else "Понял, учту!"
 
-# Загружаем индекс при старте, если есть
 try:
     engine.load_index()
 except FileNotFoundError:
     pass
 
-# Gradio-интерфейс
 with gr.Blocks(title="AI-помощник для инженера") as demo:
     gr.Markdown("# AI-помощник для инженера 1-й линии")
-    gr.Markdown("Загрузите PDF-инструкции, затем задавайте вопросы.")
+    gr.Markdown("Загрузите PDF-инструкции (на любом языке), задавайте вопросы — ответ всегда на русском.")
 
     with gr.Tab("Загрузка инструкций"):
         pdf_input = gr.File(file_count="multiple", file_types=[".pdf"])
@@ -59,15 +48,14 @@ with gr.Blocks(title="AI-помощник для инженера") as demo:
     with gr.Tab("Задать вопрос"):
         query_input = gr.Textbox(label="Ваш вопрос", placeholder="Как перезагрузить сервер?")
         ask_btn = gr.Button("Получить ответ")
-        answer_output = gr.Textbox(label="Ответ ИИ")
-        context_output = gr.Textbox(label="Использованный контекст", lines=5)
+        answer_output = gr.Textbox(label="Ответ ИИ (на русском)")
+        context_output = gr.Textbox(label="Использованный контекст (оригинал)", lines=5)
 
         with gr.Row():
             yes_btn = gr.Button("✅ Верно")
             no_btn = gr.Button("❌ Неверно")
         feedback_status = gr.Textbox(label="Обратная связь")
 
-    # Связывание событий
     upload_btn.click(upload_pdfs, inputs=pdf_input, outputs=upload_status)
     ask_btn.click(ask_question, inputs=query_input, outputs=[answer_output, context_output])
     yes_btn.click(
