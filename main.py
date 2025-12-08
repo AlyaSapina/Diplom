@@ -26,8 +26,10 @@ def ask_question(query):
     return answer, context
 
 def handle_feedback(query, answer, context, is_correct):
+    if not is_correct:
+        engine.mark_as_bad(context)  # ← ВОТ КЛЮЧ!
     log_feedback(query, answer, [context], is_correct)
-    return "Спасибо за обратную связь!" if is_correct else "Понял, учту!"
+    return "Учтено!" if is_correct else "Понял, больше не буду показывать этот фрагмент."
 
 # Загружаем индекс при старте, если есть
 try:
