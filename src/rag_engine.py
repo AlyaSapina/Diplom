@@ -37,9 +37,14 @@ class RAGEngine:
             json.dump(self.chunks, f, ensure_ascii=False, indent=2)
 
     def load_index(self, folder="models"):
-        self.index = faiss.read_index(f"{folder}/faiss_index.bin")
-        with open(f"{folder}/chunks.json", "r", encoding="utf-8") as f:
-            self.chunks = json.load(f)
+        index_path = os.path.join(folder, "faiss_index.bin")
+        chunks_path = os.path.join(folder, "chunks.json")
+        if os.path.exists(index_path) and os.path.exists(chunks_path):
+            self.index = faiss.read_index(index_path)
+            with open(chunks_path, "r", encoding="utf-8") as f:
+                self.chunks = json.load(f)
+        else:
+            raise FileNotFoundError("Индекс не найден")
 
     def ask(self, query: str) -> Tuple[str, str]:
         if self.index.ntotal == 0:

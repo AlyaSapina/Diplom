@@ -34,8 +34,9 @@ def handle_feedback(query, answer, context, is_correct):
 # Загружаем индекс при старте, если есть
 try:
     engine.load_index()
-except FileNotFoundError:
-    pass
+    print("✅ Индекс загружен из models/")
+except (FileNotFoundError, RuntimeError) as e:
+    print("ℹ️ Индекс не найден. Загрузите PDF-инструкции для создания.")
 
 with gr.Blocks(title="AI-помощник для инженера") as demo:
     gr.Markdown("# 🤖 AI-помощник для инженера 1-й линии")
