@@ -25,11 +25,18 @@ def ask_question(query):
     answer, context = engine.ask(query)
     return answer, context
 
-def handle_feedback(query, answer, context, is_correct):
+def handle_feedback(query, answer, context, bad_fragment, is_correct):
     if not is_correct:
-        engine.mark_as_bad(context)  # ← ВОТ КЛЮЧ!
-    log_feedback(query, answer, [context], is_correct)
-    return "Учтено!" if is_correct else "Понял, больше не буду показывать этот фрагмент."
+        # Если пользователь выделил фрагмент — сохраняем его как "плохой"
+        if bad_fragment.strip():
+            engine.mark_fragment_as_bad(bad_fragment.strip())
+            return f"Фрагмент помечен как нерелевантный: \"{bad_fragment[:50]}...\""
+        else:
+            # Если ничего не выделено — помечаем весь контекст
+            engine.mark_fragment_as_bad(context)
+            return "Весь фрагмент помечен как нерелевантный."
+    else:
+        return "Спасибо! Ответ подтверждён как верный."
 
 # Загружаем индекс при старте, если есть
 try:
@@ -48,23 +55,31 @@ with gr.Blocks(title="AI-помощник для инженера") as demo:
         upload_status = gr.Textbox(label="Статус")
 
     with gr.Tab("💬 Задать вопрос"):
-        query_input = gr.Textbox(label="Ваш вопрос", placeholder="Как настроить VLAN на коммутаторе?")
+        query_input = gr.Textbox(label="Ваш вопрос", placeholder="Как настроить VLAN?")
         ask_btn = gr.Button("🔍 Получить ответ")
 
         answer_output = gr.Textbox(
             label="💬 Ответ ИИ (на русском)",
-            lines=12,
-            interactive=False,
+            lines=10,
+            interactive=False
         )
         context_output = gr.Textbox(
             label="📄 Использованный контекст (оригинал)",
-            lines=12,
-            interactive=False,
+            lines=10,
+            interactive=False
+        )
+
+        # Новое поле: пользователь выделяет проблемный фрагмент
+        bad_fragment_input = gr.Textbox(
+            label="✂️ Выделите и вставьте сюда неверную часть текста (или оставьте пустым)",
+            lines=3,
+            placeholder="Например: 'Для получения поддержки звоните по телефону 8-800-XXX-XX-XX'"
         )
 
         with gr.Row():
             yes_btn = gr.Button("✅ Верно")
-            no_btn = gr.Button("❌ Неверно")
+            no_btn = gr.Button("❌ Неверно (сохранить выделенное как плохой фрагмент)")
+
         feedback_status = gr.Textbox(label="Обратная связь")
 
     upload_btn.click(upload_pdfs, inputs=pdf_input, outputs=upload_status)
@@ -76,7 +91,7 @@ with gr.Blocks(title="AI-помощник для инженера") as demo:
     )
     no_btn.click(
         handle_feedback,
-        inputs=[query_input, answer_output, context_output, gr.State(False)],
+        inputs=[query_input, answer_output, context_output, bad_fragment_input, gr.State(False)],
         outputs=feedback_status
     )
 
