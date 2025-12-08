@@ -7,18 +7,37 @@ import pdfplumber
 import re
 from typing import List
 
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """
-    Извлекает весь текст из PDF-файла.
-    :param pdf_path: путь к PDF-файлу
-    :return: строка с текстом
+    Извлекает текст из PDF, пропуская шапки/подвалы и повторяющиеся строки.
     """
     text = ""
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
             page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+            if not page_text:
+                continue
+
+            # Разделяем на строки
+            lines = page_text.splitlines()
+
+            # Удаляем пустые строки и строки с только цифрами/символами
+            clean_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Пропускаем строки, которые выглядят как номер страницы или URL
+                if re.match(r'^\d+$', stripped):  # только цифры
+                    continue
+                if 'http' in stripped or 'www.' in stripped:  # URL
+                    continue
+                if len(stripped) < 10:  # слишком короткие строки
+                    continue
+                clean_lines.append(stripped)
+
+            text += "\n".join(clean_lines) + "\n"
     return text
 
 def clean_text(text: str) -> str:

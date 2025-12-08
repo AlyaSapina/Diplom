@@ -33,6 +33,8 @@ class RAGEngine:
         self.dimension = self.embedding_model.get_sentence_embedding_dimension()
         self.index = faiss.IndexFlatIP(self.dimension)
         self.chunks = []
+        self.feedback_penalties = {}  # {chunk_text: штраф}
+        self._load_feedback()
 
     def add_chunks(self, chunks: List[str]):
         embeddings = self.embedding_model.encode(chunks, normalize_embeddings=True)
@@ -77,14 +79,7 @@ class RAGEngine:
         if self.index.ntotal == 0:
             return "Сначала загрузите инструкции.", ""
 
-        query_emb = self.embedding_model.encode([query], normalize_embeddings=True)
-        _, indices = self.index.search(query_emb, k=1)
-        idx = indices[0][0]
-
-        if idx >= len(self.chunks):
-            return "Не найдено.", ""
-
-        original_context = self.chunks[idx]
+        original_context = self.retrieve_with_penalty(query)
         answer = self._translate_to_russian(original_context)
 
         # Улучшаем читаемость
@@ -92,3 +87,42 @@ class RAGEngine:
         original_context = original_context.replace(". ", ".\n\n").strip()
 
         return answer, original_context
+
+    def _load_feedback(self):
+        """Загружает историю обратной связи."""
+        feedback_path = "feedback/feedback.json"
+        if os.path.exists(feedback_path):
+            with open(feedback_path, "r", encoding="utf-8") as f:
+                feedbacks = json.load(f)
+            for fb in feedbacks:
+                if not fb.get("is_correct", True):  # если НЕВЕРНО
+                    chunk = fb["chunks"][0] if isinstance(fb["chunks"], list) else fb["chunks"]
+                    self.feedback_penalties[chunk] = self.feedback_penalties.get(chunk, 0) + 1
+
+    def retrieve_with_penalty(self, query: str, k: int = 3) -> str:
+        """
+        Находит самый релевантный чанк, учитывая штрафы за 'Неверно'.
+        """
+        if self.index.ntotal == 0:
+            return "Инструкции не загружены."
+
+        query_emb = self.embedding_model.encode([query], normalize_embeddings=True)
+        distances, indices = self.index.search(query_emb, k * 5)  # берём больше кандидатов
+
+        candidates = []
+        for i in range(len(indices[0])):
+            idx = indices[0][i]
+            if idx >= len(self.chunks):
+                continue
+            chunk = self.chunks[idx]
+            raw_score = distances[0][i]  # чем выше, тем лучше
+            penalty = self.feedback_penalties.get(chunk, 0) * 0.5  # штраф снижает оценку
+            adjusted_score = raw_score - penalty
+            candidates.append((adjusted_score, chunk))
+
+        # Сортируем по скорректированной оценке
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        if candidates:
+            return candidates[0][1]
+        else:
+            return "Не найдено."

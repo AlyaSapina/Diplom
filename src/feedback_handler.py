@@ -18,20 +18,17 @@ def init_feedback_file():
 
 def log_feedback(query: str, answer: str, chunks: List[str], is_correct: bool):
     """
-    Сохраняет обратную связь в JSON.
-    :param query: вопрос
-    :param answer: ответ ИИ
-    :param chunks: использованные чанки
-    :param is_correct: True/False
+    Сохраняет обратную связь.
+    :param chunks: список чанков (обычно один)
     """
-    init_feedback_file()
     feedback_entry = {
         "timestamp": datetime.now().isoformat(),
         "query": query,
         "answer": answer,
-        "chunks": chunks,
+        "chunks": chunks,  # сохраняем именно тот чанк, который был использован
         "is_correct": is_correct
     }
+    init_feedback_file()
     with open(FEEDBACK_FILE, "r+", encoding="utf-8") as f:
         data = json.load(f)
         data.append(feedback_entry)
