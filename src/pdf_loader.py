@@ -87,7 +87,7 @@ def split_chapter_into_chunks(chapter_text: str, chunk_size: int = 250) -> List[
     if not clean_text:
         return []
 
-    words = clean_opt_text.split()
+    words = clean_text.split()  # ← было: clean_opt_text → исправлено на clean_text
     chunks = []
     for i in range(0, len(words), chunk_size):
         chunk = " ".join(words[i:i + chunk_size])
