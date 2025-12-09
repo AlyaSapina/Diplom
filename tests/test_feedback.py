@@ -54,6 +54,7 @@ class TestFeedbackHandler(unittest.TestCase):
         log_feedback("Вопрос 2", "Ответ 2", ["Чанк 2"], False)
         with open(self.feedback_file, "r", encoding="utf-8") as f:
             data = json.load(f)
+
         self.assertEqual(len(data), 2)
         self.assertTrue(data[0]["is_correct"])
         self.assertFalse(data[1]["is_correct"])
