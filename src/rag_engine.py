@@ -10,6 +10,7 @@
 import os
 import json
 import faiss
+import re
 from sentence_transformers import SentenceTransformer
 from typing import List, Tuple
 
@@ -37,12 +38,15 @@ class RAGEngine:
         else:
             self.bad_fragments = set()
 
+    def _normalize_text(self, text: str) -> str:
+        """Приводит текст к единому виду для сравнения."""
+        return re.sub(r'\s+', ' ', text.strip().lower())
+
     def _is_chunk_bad(self, chunk: str) -> bool:
-        """Проверяет, содержит ли чанк нерелевантный фрагмент."""
-        if not self.bad_fragments:
-            return False
+        norm_chunk = self._normalize_text(chunk)
         for bad in self.bad_fragments:
-            if bad.strip() in chunk:
+            norm_bad = self._normalize_text(bad)
+            if norm_bad and norm_bad in norm_chunk:
                 return True
         return False
 
@@ -82,28 +86,37 @@ class RAGEngine:
 
     def ask(self, query: str) -> Tuple[str, str]:
         """
-        Возвращает (ответ, контекст) — всегда дословный фрагмент из документа.
-        Исключает помеченные как плохие фрагменты.
+        Возвращает кортеж (ответ_на_русском, оригинальный_контекст).
+        Ответ — это дословный фрагмент из документа, отформатированный для читаемости.
+        Все чанки, содержащие ранее помеченные как нерелевантные подстроки, исключаются.
         """
         if self.index.ntotal == 0:
             return "Сначала загрузите инструкции.", ""
 
+        # Генерируем эмбеддинг запроса
         query_emb = self.model.encode([query], normalize_embeddings=True)
-        # Ищем до 20 кандидатов, чтобы был выбор
-        scores, indices = self.index.search(query_emb, min(20, self.index.ntotal))
 
+        # Ищем до 20 кандидатов (или меньше, если документов мало)
+        k = min(20, self.index.ntotal)
+        scores, indices = self.index.search(query_emb, k)
+
+        # Проходим по кандидатам от наиболее к наименее релевантному
         for i in range(len(indices[0])):
             idx = indices[0][i]
             if idx >= len(self.chunks):
                 continue
             chunk = self.chunks[idx]
-            if not self._is_chunk_bad(chunk):
-                # Улучшаем читаемость
-                formatted = chunk.replace(". ", ".\n\n").strip()
-                return formatted, chunk
 
-        return "Подходящий фрагмент не найден.", ""
+            # Проверяем, не содержит ли чанк запрещённых фрагментов
+            if self._is_chunk_bad(chunk):
+                continue  # пропускаем плохой чанк
 
+            # Форматируем для лучшей читаемости (разбиваем на абзацы)
+            formatted_answer = chunk.replace(". ", ".\n\n").strip()
+            return formatted_answer, chunk
+
+        # Если все кандидаты отфильтрованы
+        return "Подходящий фрагмент не найден. Попробуйте переформулировать вопрос.", ""
     def mark_fragment_as_bad(self, fragment: str):
         """
         Помечает фрагмент как нерелевантный.
@@ -113,6 +126,12 @@ class RAGEngine:
             return
         fragment = fragment.strip()
         self.bad_fragments.add(fragment)
+
+        # Очищаем от лишних пробелов и переносов
+        clean_fragment = re.sub(r'\s+', ' ', fragment.strip())
+        if len(clean_fragment) < 5:  # слишком коротко — игнорируем
+            return
+        self.bad_fragments.add(clean_fragment)
 
         # Сохраняем обновлённый список
         os.makedirs("feedback", exist_ok=True)

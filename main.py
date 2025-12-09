@@ -86,9 +86,10 @@ with gr.Blocks(title="AI-помощник для инженера") as demo:
     ask_btn.click(ask_question, inputs=query_input, outputs=[answer_output, context_output])
     yes_btn.click(
         handle_feedback,
-        inputs=[query_input, answer_output, context_output, gr.State(True)],
+        inputs=[query_input, answer_output, context_output, bad_fragment_input, gr.State(True)],
         outputs=feedback_status
     )
+
     no_btn.click(
         handle_feedback,
         inputs=[query_input, answer_output, context_output, bad_fragment_input, gr.State(False)],
